@@ -54,15 +54,15 @@ public:
 		//update the no of current children
 		void childJoin() {
 			bool succ = false;
-			this->undoArr = 0;
+			this->undoArr = -1;
 			while (!succ) {
 				int old = this->childCount.load(memory_order_acquire); //snapshot of childcount
 																	   //if it is the first child node, update to 1
 				if (old == 0) {
 					if (this->childCount.compare_exchange_weak(old, -99, memory_order_release, memory_order_relaxed)) {
+						old = -99;//new snapshot of childcount
+						this->childCount.compare_exchange_weak(old, 1, memory_order_release, memory_order_relaxed);
 						succ = true;
-						int old2 = -99; //new snapshot of childcount
-						this->childCount.compare_exchange_weak(old2, 1, memory_order_release, memory_order_relaxed);
 					}
 				}
 				if (old >= 1) {
