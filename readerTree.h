@@ -68,7 +68,7 @@ public:
 				if (old >= 1) {
 					if (this->childCount.compare_exchange_weak(old, old + 1, memory_order_release, memory_order_relaxed)) {
 						succ = true;
-						if (old + 1 > 2)cout << "old: " << old << "error occur in childJoin() " << this << endl;
+						
 					}
 				}
 				if (old == -99) {
@@ -84,7 +84,7 @@ public:
 						childCount.compare_exchange_weak(old, 1, memory_order_release, memory_order_relaxed);
 					}
 				}
-				if ((old != -99) && old < 0 && old >2) {
+				if ((old != -99) && old < 0 ) {
 					cout << "old: " << old << "error occur in childJoin() " << this << endl;
 				}
 			}
@@ -192,19 +192,4 @@ protected:
 	bool threadSense = true; //initial status of each node
 };
 
-readerTree* t;
-int var = 0;
-
-void reader(int i) {
-	cout << "reader " << i << " join " << endl;
-	t->addReader(i);
-	cout << i << " var :" << var << endl;
-}
-
-
-void control() {
-	cout << "setSense" << endl;
-	t->setSense();
-	//cout << "ready Go " << endl;
-}
 
