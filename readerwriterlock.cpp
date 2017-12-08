@@ -84,7 +84,7 @@ public:
 						childCount.compare_exchange_weak(old, 1, memory_order_release, memory_order_relaxed);
 					}
 				}
-				if ((old != -99) && old < 0 && old >2) {
+				if ((old != -99) && old < 0) {
 					cout << "old: " << old << "error occur in childJoin() " << this << endl;
 				}
 			}
