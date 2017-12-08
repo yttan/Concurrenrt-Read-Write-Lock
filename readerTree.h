@@ -208,30 +208,3 @@ void control() {
 	//cout << "ready Go " << endl;
 }
 
-
-int main()
-{
-	t = new readerTree(7, 2);
-	thread a(reader, 0);
-	thread b(reader, 1);
-	thread c(reader, 2);
-	thread d(reader, 3);
-	thread q(reader, 4);
-	thread s(reader, 5);
-
-	thread e(control);
-
-	a.join();
-	b.join();
-	c.join();
-	d.join();
-	s.join();
-	q.join();
-	e.join();
-
-	while (!t->isEmpty()) {
-	}
-	cout << "done" << endl;
-	return 0;
-}
-
