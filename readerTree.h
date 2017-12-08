@@ -24,6 +24,7 @@ public:
 			this->parent = myParent;
 			this->threadSense = tSense;
 		}
+
 		void await(readerTree* t) {
 			bool mySense = threadSense;
 			if (this->parent != NULL)this->parent->childJoin();
@@ -163,19 +164,12 @@ public:
 		else return false;
 	}
 
-	//recursively update parent's childCount.
-	void increaseParent(Node* p) {
-		if (p != NULL) {
-			if (p->getChildCount() == 0) increaseParent(p->getParent()); // update grandparent
-			p->childJoin();
-		}
-	}
 
 
 	//StaticTreeBarrier await
 	void addReader(int id) {
-
-		node.at(id)->await(this); // start waiting in the tree.
+		// start waiting in the tree.
+		node.at(id)->await(this); 
 	}
 
 	//tell all children they can leave at anytime.
