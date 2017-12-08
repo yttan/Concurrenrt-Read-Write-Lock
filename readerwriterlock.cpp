@@ -60,14 +60,15 @@ public:
 																	   //if it is the first child node, update to 1
 				if (old == 0) {
 					if (this->childCount.compare_exchange_weak(old, -99, memory_order_release, memory_order_relaxed)) {
-					//	succ = true;
-					//	int old2 = -99; //new snapshot of childcount
-					//	this->childCount.compare_exchange_weak(old2, 1, memory_order_release, memory_order_relaxed);
+						succ = true;
+						int old2 = -99; //new snapshot of childcount
+						this->childCount.compare_exchange_weak(old2, 1, memory_order_release, memory_order_relaxed);
 					}
 				}
 				if (old >= 1) {
 					if (this->childCount.compare_exchange_weak(old, old + 1, memory_order_release, memory_order_relaxed)) {
 						succ = true;
+						if (old + 1 > 2)cout << "old: " << old << "error occur in childJoin() " << this << endl;
 					}
 				}
 				if (old == -99) {
@@ -75,15 +76,16 @@ public:
 						this->parent->childJoin();
 						if (!childCount.compare_exchange_weak(old, 1, memory_order_release, memory_order_relaxed)) {
 							undoArr = undoArr + 1;
-							
+
 						}
+						//else succ = true;
 					}
 					else {
 						childCount.compare_exchange_weak(old, 1, memory_order_release, memory_order_relaxed);
 					}
 				}
 				if ((old != -99) && old < 0 && old >2) {
-					cout <<"old: "<<old<< "error occur in childJoin() " << this <<endl;
+					cout << "old: " << old << "error occur in childJoin() " << this << endl;
 				}
 			}
 
@@ -117,7 +119,7 @@ public:
 		int children; // Max. of children
 		atomic<int> childCount;  //the number of child that currently waiting in the tree
 		bool threadSense; // indicate the reader leave or not
-		//bool succ;   //indicate the update to parent is succ or not.
+						  //bool succ;   //indicate the update to parent is succ or not.
 		int undoArr; // steps needed to undo
 	};
 
@@ -157,7 +159,7 @@ public:
 
 	//check if all tree nodes gone
 	bool isEmpty() {
-		if (node.at(0)->getChildCount() == 0  && !node.at(0)->getThreadSense()) return true;
+		if (node.at(0)->getChildCount() == 0 && !node.at(0)->getThreadSense()) return true;
 		else return false;
 	}
 
