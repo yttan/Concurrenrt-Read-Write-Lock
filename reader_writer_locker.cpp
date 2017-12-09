@@ -1,4 +1,7 @@
-﻿#include <pthread.h>
+﻿#include "stdafx.h"
+
+#define HAVE_STRUCT_TIMESPEC
+#include <pthread.h>
 #include <iostream>
 #include <cstddef>
 #include <atomic>
@@ -33,6 +36,16 @@ public:
 			this->threadSense = 1;
 			if (this->parent != NULL)this->parent->childJoin();
 			while (t->sense.load(memory_order_acquire) != true) {}; //spin until sense change
+			if (this->parent != NULL) this->parent->childDone();
+			this->threadSense = 2;
+		}
+
+		void rootAwait() {
+			this->threadSense = 1;
+			if (this->parent != NULL)this->parent->childJoin();
+		}
+
+		void rootDepart() {
 			if (this->parent != NULL) this->parent->childDone();
 			this->threadSense = 2;
 		}
@@ -173,6 +186,14 @@ public:
 		node.at(id)->await(this); // start waiting in the tree.
 	}
 
+	void addRoot(int id) {
+		node.at(id)->rootAwait(); // start waiting in the tree.
+	}
+
+	void removeRoot(int id) {
+		node.at(id)->rootDepart(); // start waiting in the tree.
+	}
+
 	//tell all children they can leave at anytime.
 	void setSense() {
 		sense.store(true, memory_order_release);
@@ -209,8 +230,9 @@ public:
 		if (!isroot) {
 			rtree->addReader(reader_id);
 		}
-	
-	
+		else {
+			rtree->addRoot(reader_id);
+		}
 	}
 	// check if my tree is empty, every reader leaves //////!!!!!!!!!!!!!!!!!!!!!!! to be checked
 	bool tree_empty() {
@@ -374,6 +396,7 @@ public:
 			myreader->addreader(true);
 			while (!myqueue->isfront(myreader)) {}
 			myreader->rtree->setSense();
+			myreader->rtree->removeRoot(myreader->reader_id);
 		}
 		else {                                // there are nodes in the queue
 			if (myqueue->getlast()->iswriter) {   // find out the last one in the queue is a writer
@@ -409,15 +432,15 @@ public:
 	}
 
 	/*void control() {
-		while (!end) {
-			if (!myqueue->isEmpty() && myqueue->getfront() != NULL) {
-				if (myqueue->getfront()->rtree != NULL) {
-					if (!myqueue->getfront()->rtree->isEmpty()) {
-						myqueue->getfront()->rtree->setSense();
-					}
-				}
-			}
-		}
+	while (!end) {
+	if (!myqueue->isEmpty() && myqueue->getfront() != NULL) {
+	if (myqueue->getfront()->rtree != NULL) {
+	if (!myqueue->getfront()->rtree->isEmpty()) {
+	myqueue->getfront()->rtree->setSense();
+	}
+	}
+	}
+	}
 
 	}*/
 };
@@ -431,7 +454,8 @@ int var = 0;
 
 
 void* reader(void* id)
-{	int tid = (long)id;
+{
+	int tid = (long)id;
 	RWnode* myreader = new RWnode();
 	//printf("\nReader %d constructed ", id);
 	myreader->reader_id = tid;
@@ -439,11 +463,11 @@ void* reader(void* id)
 	//printf("\nReader  %d is locked ", id);
 
 	int newvar = var;
-	printf("\nReader %d read var: %d ", id, var);
+	printf("\nReader %d read var: %d ", tid, var);
 	//cout << "read var:" << newvar << endl;
 	mylock->read_unlock();
 	//printf("\nReader %d is unlocked ", id);
-
+	return 0;
 }
 
 void* writer(void* id)
@@ -454,12 +478,12 @@ void* writer(void* id)
 	mywriter->writer_id = tid;
 	mylock->write_lock(mywriter);
 	//printf("\nWriter is locked ");
-//	sleep(10);
+	//	sleep(10);
 	var += 1;
-	printf("\nWriter %d write var: %d ",id,var);
+	printf("\nWriter %d write var: %d ", tid, var);
 	mylock->write_unlock();
 	//printf("\nWriter is unlocked ");
-
+	return 0;
 }
 //void manager() {
 //	mylock->control();
@@ -471,53 +495,53 @@ void* writer(void* id)
 int main()
 {
 
-	
+
 	mylock = new RWlock();
 	//std::thread Manager(manager);
 	pthread_t  Reader[NUMBER_READERS];
 	pthread_t  Writer[NUMBER_WRITERS];
 	int rc;
 	//thread create
-	for (int i = 0; i < NUMBER_READERS; i++){
-		rc = pthread_create(&Reader[i],NULL, reader,(void*)i);
-		if(rc){
+	for (int i = 0; i < NUMBER_READERS; i++) {
+		rc = pthread_create(&Reader[i], NULL, reader, (void*)i);
+		if (rc) {
 			printf("ERROR:unable to create thread ");
-			cout<<rc<<endl;
+			cout << rc << endl;
 			exit(-1);
 		}
-	
-	}
-        for (int i = 0; i < NUMBER_WRITERS; i++){
-                rc = pthread_create(&Writer[i],NULL,writer,(void*)i);
-                if(rc){
-                        printf("ERROR:unable to create thread ");
-                        cout<<rc<<endl;
-                        exit(-1);
-                }
 
-        }
+	}
+	for (int i = 0; i < NUMBER_WRITERS; i++) {
+		rc = pthread_create(&Writer[i], NULL, writer, (void*)i);
+		if (rc) {
+			printf("ERROR:unable to create thread ");
+			cout << rc << endl;
+			exit(-1);
+		}
+
+	}
 
 	//thread join
-	for (int i = 0; i < NUMBER_READERS; i++){
-                rc = pthread_join(Reader[i],NULL);
-                if(rc){
-                        printf("ERROR:unable to join thread ");
-                        cout<<rc<<endl;
-                        exit(-1);
-                }
+	for (int i = 0; i < NUMBER_READERS; i++) {
+		rc = pthread_join(Reader[i], NULL);
+		if (rc) {
+			printf("ERROR:unable to join thread ");
+			cout << rc << endl;
+			exit(-1);
+		}
 
-        }
- 	
-	for (int i = 0; i < NUMBER_WRITERS; i++){
-                rc = pthread_join(Writer[i],NULL);
-                if(rc){
-                        printf("ERROR:unable to join thread ");
-                        cout<<rc<<endl;
-                        exit(-1);
-                }
+	}
 
-        }
+	for (int i = 0; i < NUMBER_WRITERS; i++) {
+		rc = pthread_join(Writer[i], NULL);
+		if (rc) {
+			printf("ERROR:unable to join thread ");
+			cout << rc << endl;
+			exit(-1);
+		}
 
-	
+	}
+
+
 	return 0;
 }
