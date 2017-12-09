@@ -1,0 +1,3 @@
+
+reader_writer_lock: reader_writer_lock.h reader_writer_lock.c
+	gcc -o reader_writer_lock reader_writer_lock.c -I
