@@ -1,8 +1,4 @@
-﻿#include "stdafx.h"
-
-#define HAVE_STRUCT_TIMESPEC
-
-#include <pthread.h>
+﻿#include <pthread.h>
 #include <iostream>
 #include <cstddef>
 #include <atomic>
@@ -234,7 +230,7 @@ public:
 	}
 	// construct a tree
 	void constructtree() {
-		rtree = new readerTree(NUMBER_READERS, RADIX);    //!!!!!!!!!!!!!!!!!!!!!!!!!!!! to be checked
+		rtree = new readerTree(NUMBER_READERS, RADIX);   
 	}
 	//add reader to a tree
 	void addreader(bool isroot) {
@@ -251,7 +247,7 @@ public:
 			rtree->removeRoot(reader_id);
 		}
 	}
-	// check if my tree is empty, every reader leaves //////!!!!!!!!!!!!!!!!!!!!!!! to be checked
+	// check if my tree is empty, every reader leaves 
 	bool tree_empty() {
 		if (rtree->isEmpty()) {
 			return true;
@@ -331,11 +327,6 @@ public:
 						succ1 = true;
 					}
 				}
-				//first.store(first.load(memory_order_relaxed)->getNext(), memory_order_relaxed);
-				//last.load(memory_order_relaxed)->setNext(newnode);
-				//last.store(first, memory_order_relaxed);
-
-
 
 			}
 			// not empty queue
@@ -517,18 +508,6 @@ public:
 		myqueue->dequeue();
 	}
 
-	/*void control() {
-	while (!end) {
-	if (!myqueue->isEmpty() && myqueue->getfront() != NULL) {
-	if (myqueue->getfront()->rtree != NULL) {
-	if (!myqueue->getfront()->rtree->isEmpty()) {
-	myqueue->getfront()->rtree->setSense();
-	}
-	}
-	}
-	}
-
-	}*/
 };
 
 
@@ -543,16 +522,12 @@ void* reader(void* id)
 {
 	int tid = (long)id;
 	RWnode* myreader = new RWnode();
-	//printf("\nReader %d constructed ", id);
 	myreader->reader_id = tid;
 	mylock->read_lock(myreader);
-	//printf("\nReader  %d is locked ", id);
 
 	int newvar = var;
 	printf("\nReader %d read var: %d ", id, var);
-	//cout << "read var:" << newvar << endl;
 	mylock->read_unlock();
-	//printf("\nReader %d is unlocked ", id);
 	return 0;
 }
 
@@ -563,19 +538,11 @@ void* writer(void* id)
 	mywriter->iswriter = true;
 	mywriter->writer_id = tid;
 	mylock->write_lock(mywriter);
-	//printf("\nWriter is locked ");
-	//	sleep(10);
 	var += 1;
 	printf("\nWriter %d write var: %d ", id, var);
 	mylock->write_unlock();
-	//printf("\nWriter is unlocked ");
 	return 0;
 }
-//void manager() {
-//	mylock->control();
-//}
-//
-
 
 
 int main()
