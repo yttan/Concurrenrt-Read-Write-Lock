@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 
 #define HAVE_STRUCT_TIMESPEC
+
 #include <pthread.h>
 #include <iostream>
 #include <cstddef>
@@ -15,7 +16,7 @@
 using namespace std;
 
 #define NUMBER_READERS  32
-#define NUMBER_WRITERS  2 
+#define NUMBER_WRITERS  2
 #define RADIX  4
 
 
@@ -32,6 +33,12 @@ public:
 			this->parent = myParent;
 			this->threadSense = 0;
 		}
+		~Node() {
+			delete this->parent;
+
+		}
+
+
 		void await(readerTree* t) {
 			this->threadSense = 1;
 			if (this->parent != NULL)this->parent->childJoin();
@@ -40,15 +47,19 @@ public:
 			this->threadSense = 2;
 		}
 
+
 		void rootAwait() {
 			this->threadSense = 1;
 			if (this->parent != NULL)this->parent->childJoin();
 		}
 
 		void rootDepart() {
+
 			if (this->parent != NULL) this->parent->childDone();
 			this->threadSense = 2;
 		}
+
+
 
 
 
@@ -57,6 +68,7 @@ public:
 			while (true) {
 				int old = this->childCount.load(memory_order_acquire);
 				//decrement the counter 
+				if (old == 0) return;
 				if (old >= 1) {
 					if (childCount.compare_exchange_weak(old, old - 1, memory_order_release, memory_order_relaxed)) {
 						if (old == 1 && this->parent != NULL) {
@@ -189,9 +201,8 @@ public:
 	void addRoot(int id) {
 		node.at(id)->rootAwait(); // start waiting in the tree.
 	}
-
 	void removeRoot(int id) {
-		node.at(id)->rootDepart(); // start waiting in the tree.
+		node.at(id)->rootDepart();
 	}
 
 	//tell all children they can leave at anytime.
@@ -234,6 +245,12 @@ public:
 			rtree->addRoot(reader_id);
 		}
 	}
+
+	void removeRoot() {
+		if (isroot) {
+			rtree->removeRoot(reader_id);
+		}
+	}
 	// check if my tree is empty, every reader leaves //////!!!!!!!!!!!!!!!!!!!!!!! to be checked
 	bool tree_empty() {
 		if (rtree->isEmpty()) {
@@ -270,7 +287,17 @@ class RWQueue {
 		}
 		// set the next pointer
 		void setNext(QueueNode* next) {
-			nextitem.store(next, memory_order_release);
+			//nextitem.store(next, memory_order_release);
+			bool succ = false;
+			QueueNode* old = nextitem.load(memory_order_relaxed);
+			while (!succ) {
+				if (nextitem.compare_exchange_weak(old, next, memory_order_release, memory_order_relaxed)) {
+					succ = true;
+				}
+				else {
+					old = nextitem.load(memory_order_acquire);
+				}
+			}
 		}
 	public:
 		atomic<QueueNode*> nextitem;
@@ -280,50 +307,95 @@ class RWQueue {
 public:
 	RWQueue() {
 		first.store(new QueueNode(), memory_order_relaxed);
-		last.store(new QueueNode(), memory_order_relaxed);
+		last.store(first.load(memory_order_relaxed), memory_order_relaxed);
 		size.store(0, memory_order_relaxed);
 	}
 	// enqueue a node
 	void enqueue(RWnode* o) {
 		QueueNode* newnode = new QueueNode(o);
+		bool succ1 = false;
+		bool succ2 = false;
 		// empty queue
-		if (first.load(memory_order_relaxed)->getItem() == NULL) {
-			first.load(memory_order_relaxed)->setNext(newnode);
-			first.store(first.load(memory_order_relaxed)->getNext(), memory_order_relaxed);
-			//last.load(memory_order_relaxed)->setNext(newnode);
-			last.store(first, memory_order_relaxed);
-			size.fetch_add(1, memory_order_relaxed);
-		}
-		// not empty queue
-		else {
-			last.load(memory_order_relaxed)->setNext(newnode);
+		while (!succ1 || !succ2) {
+			if (first.load(memory_order_relaxed)->getItem() == NULL && last.load(memory_order_relaxed)->getItem() == NULL) {
+				//first.load(memory_order_relaxed)->setNext(newnode);
+				QueueNode* old = first.load(memory_order_acquire);
+				if (last.compare_exchange_weak(old, newnode, memory_order_release, memory_order_relaxed)) {
+					succ2 = true;
 
-			last.store(last.load(memory_order_relaxed)->getNext(), memory_order_relaxed);
-			size.fetch_add(1, memory_order_relaxed);
+					if (first.compare_exchange_weak(old, newnode, memory_order_release, memory_order_relaxed)) {
+						int i = size.load(memory_order_acquire);
+						while (size > 0 && !(size.compare_exchange_weak(i, i + 1, memory_order_release))) {
+							i = size.load(memory_order_acquire);
+						}
+						succ1 = true;
+					}
+				}
+				//first.store(first.load(memory_order_relaxed)->getNext(), memory_order_relaxed);
+				//last.load(memory_order_relaxed)->setNext(newnode);
+				//last.store(first, memory_order_relaxed);
+
+
+
+			}
+			// not empty queue
+			else {
+				last.load(memory_order_acquire)->setNext(newnode);
+				//last.store(last.load(memory_order_relaxed)->getNext(), memory_order_relaxed);
+				QueueNode* old = last.load(memory_order_acquire);
+				if (last.compare_exchange_weak(old, old->getNext(), memory_order_release, memory_order_relaxed)) {
+					int i = size.load(memory_order_acquire);
+					while (size > 0 && !(size.compare_exchange_weak(i, i + 1, memory_order_release))) {
+						i = size.load(memory_order_acquire);
+					}
+					succ1 = true;
+					succ2 = true;
+				}
+
+			}
 		}
 	}
 	// dequeue a node
 	RWnode * dequeue() {
-		//only one item in the queue, need to change the last pointer
-		if (first.load(memory_order_acquire) == last.load(memory_order_acquire)) {
-			QueueNode* nodewithitem = first.load(memory_order_relaxed);
-			RWnode * objecttoreturn = nodewithitem->getItem();
-			size.fetch_sub(1, memory_order_release);
-			QueueNode* temp = new QueueNode();
-			first.store(temp, memory_order_relaxed);
-			last.store(temp, memory_order_relaxed);
-			//		free(nodewithitem);                         //free memory
-			return objecttoreturn;
-		}
-		//multiple items, do not need to consider last pointer
-		else {
-			QueueNode* nodewithitem = first.load(memory_order_relaxed);
-			RWnode * objecttoreturn = nodewithitem->getItem();
-			size.fetch_sub(1, memory_order_release);
+		bool succ1 = false;
+		bool succ2 = false;
+		while (!succ1 || !succ2) {
+			//only one item in the queue, need to change the last pointer
+			if (first.load(memory_order_relaxed) == last.load(memory_order_relaxed)) {
+				QueueNode* nodewithitem = first.load(memory_order_relaxed); //the snapshot of first
+				RWnode * objecttoreturn = nodewithitem->getItem();
+				QueueNode* old = last.load(memory_order_acquire);
+				QueueNode* first_old = first.load(memory_order_acquire);
 
-			first.store(first.load(memory_order_relaxed)->getNext(), memory_order_relaxed);
-			//	free(nodewithitem);                      //free memory
-			return objecttoreturn;
+				QueueNode* newnode = new QueueNode();
+
+				succ2 = first.compare_exchange_weak(first_old, newnode, memory_order_release, memory_order_relaxed);
+				succ1 = last.compare_exchange_weak(old, newnode, memory_order_release, memory_order_relaxed);
+				if (succ1&&succ2) {
+					int i = size.load(memory_order_acquire);
+					while (size > 0 && !(size.compare_exchange_weak(i, i - 1, memory_order_release))) {
+						i = size.load(memory_order_acquire);
+					}
+					return objecttoreturn;
+				}
+			}
+			//multiple items, do not need to consider last pointer
+			else {
+				QueueNode* nodewithitem = first.load(memory_order_relaxed);
+				RWnode * objecttoreturn = nodewithitem->getItem();
+				QueueNode* first_old = first.load(memory_order_acquire);
+				if (first_old->getNext() != NULL) {
+					if (first.compare_exchange_weak(first_old, first_old->getNext(), memory_order_release, memory_order_relaxed)) {
+						int i = size.load(memory_order_acquire);
+						while (size > 0 && !(size.compare_exchange_weak(i, i - 1, memory_order_release))) {
+							i = size.load(memory_order_acquire);
+						}
+						succ2 = true;
+						succ1 = true;
+						return objecttoreturn;
+					}
+				}
+			}
 		}
 	}
 	// get the first node in the queue
@@ -339,7 +411,7 @@ public:
 	// get the last node in the queue
 	RWnode* getlast() {
 		if (last.load(memory_order_relaxed) != NULL) {
-			QueueNode* nodewithitem = last.load(memory_order_relaxed);
+			QueueNode* nodewithitem = last.load(memory_order_acquire);
 
 			return nodewithitem->getItem();
 		}
@@ -362,11 +434,11 @@ public:
 	}
 	// get size of the queue
 	int getsize() {
-		return size.load(memory_order_relaxed);
+		return size.load(memory_order_acquire);
 	}
 	// check if the queue is empty
 	bool isEmpty() {
-		return size.load(memory_order_relaxed) == 0;
+		return size.load(memory_order_acquire) == 0;
 	}
 protected:
 	atomic<QueueNode*> first;
@@ -388,27 +460,41 @@ public:
 
 
 	void read_lock(RWnode* myreader) {
-
-		if (myqueue->isEmpty()) {                  // is the first node
-			myreader->isroot = true;
-			myreader->constructtree();
-			myqueue->enqueue(myreader);
-			myreader->addreader(true);
-			while (!myqueue->isfront(myreader)) {}
-			myreader->rtree->setSense();
-			myreader->rtree->removeRoot(myreader->reader_id);
-		}
-		else {                                // there are nodes in the queue
-			if (myqueue->getlast()->iswriter) {   // find out the last one in the queue is a writer
+		bool succ = false;
+		while (!succ) {
+			if (myqueue->isEmpty()) {                  // is the first node
+													   //if (myqueue->getlast!=NULL) {                  // is the first node
 				myreader->isroot = true;
-				myreader->constructtree(); // need a new tree	
+
+				myreader->constructtree();
 				myqueue->enqueue(myreader);
 				myreader->addreader(true);
 				while (!myqueue->isfront(myreader)) {}
 				myreader->rtree->setSense();
+				myreader->removeRoot();
+				succ = true;
 			}
-			else {                                            // the last one is a reader tree. 					  
-				myqueue->getlast()->addreader(false);
+			//not Empty
+			else {
+				RWnode* now = myqueue->getlast();// there are nodes in the queue
+				if (now) {
+					if (now->iswriter) {   // find out the last one in the queue is a writer
+						myreader->isroot = true;
+						myreader->constructtree(); // need a new tree	
+
+						myqueue->enqueue(myreader);
+						myreader->addreader(true);
+						while (!myqueue->isfront(myreader)) {}
+						myreader->rtree->setSense();
+						myreader->removeRoot();
+						succ = true;
+
+					}
+					if (now->isroot) {         // the last one is a reader tree. 					  
+						now->addreader(false);
+						succ = true;
+					}
+				}
 			}
 		}
 	}
@@ -463,7 +549,7 @@ void* reader(void* id)
 	//printf("\nReader  %d is locked ", id);
 
 	int newvar = var;
-	printf("\nReader %d read var: %d ", tid, var);
+	printf("\nReader %d read var: %d ", id, var);
 	//cout << "read var:" << newvar << endl;
 	mylock->read_unlock();
 	//printf("\nReader %d is unlocked ", id);
@@ -480,7 +566,7 @@ void* writer(void* id)
 	//printf("\nWriter is locked ");
 	//	sleep(10);
 	var += 1;
-	printf("\nWriter %d write var: %d ", tid, var);
+	printf("\nWriter %d write var: %d ", id, var);
 	mylock->write_unlock();
 	//printf("\nWriter is unlocked ");
 	return 0;
@@ -497,7 +583,7 @@ int main()
 
 
 	mylock = new RWlock();
-	//std::thread Manager(manager);
+
 	pthread_t  Reader[NUMBER_READERS];
 	pthread_t  Writer[NUMBER_WRITERS];
 	int rc;
