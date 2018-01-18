@@ -1,6 +1,6 @@
 # Concurrenrt-Read-Write-Lock
 
-Author: Lai Man Tang, Yuting Tan
+Author: Yuting Tan, Lai Man Tang
 Date: 12/09/2017
 
 This project is aimed to implement a concurrent reader writer lock using c++11 atomic features.
