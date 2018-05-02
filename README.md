@@ -1,4 +1,4 @@
-# Concurrenrt-Reader-Writer-Lock
+# Concurrent-Reader-Writer-Lock
 
 Author: Yuting Tan, Lai Man Tang  
 Date: 12/09/2017
